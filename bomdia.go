@@ -19,7 +19,7 @@ func main() {
 	}
 
 	groupAddr := net.UDPAddr{
-		IP: net.ParseIP("244.0.0.251"),
+		IP: net.ParseIP("224.0.0.251"),
 		Port: 5353,
 	}
 
@@ -28,6 +28,8 @@ func main() {
 		panic(err)
 	}
 	defer conn.Close()
+
+	fmt.Printf("Listening for multicast DNS messages...\n")
 
 	buf := make([]byte, iface.MTU)
 	for {
