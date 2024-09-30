@@ -45,7 +45,7 @@ func main() {
 
 		ID := binary.BigEndian.Uint16(buf[0:2])
 
-		QR := buf[2]&0x80 != 0
+		QR := buf[2]>>7 & 0x01
 		OpCode := uint8(buf[2]>>3 & 0x0F)
 		AA := buf[2]&0x04 != 0
 		TC := buf[2]&0x02 != 0
@@ -61,11 +61,12 @@ func main() {
 		NumAdditionalRR := binary.BigEndian.Uint16(buf[10:12])
 
 		fmt.Printf("Message from '%s:%d'\n", src.IP, src.Port)
+		fmt.Printf("========== HEADER SECTION ==========\n")
 		fmt.Printf("FULL HEADER: %b\n", buf[:12])
 
 		fmt.Printf("Query ID:        %d\n", ID)
 
-		fmt.Printf("QR Bit:          %v\n", QR)
+		fmt.Printf("QR Bit:          %b\n", QR)
 		fmt.Printf("OpCode:          %d\n", OpCode)
 		fmt.Printf("AA Bit:          %v\n", AA)
 		fmt.Printf("TC Bit:          %v\n", TC)
@@ -79,6 +80,41 @@ func main() {
 		fmt.Printf("# Answers:       %d\n", NumAnswers)
 		fmt.Printf("# Authority RR:  %d\n", NumAuthorityRR)
 		fmt.Printf("# Additional RR: %d\n", NumAdditionalRR)
+
+		QName := ""
+		offset := 12
+		pos := offset
+		for buf[pos] != '\x00' {
+			length := int(buf[pos])
+			pos++
+
+			label := string(buf[pos : pos+length])
+			QName += "." + label
+
+			pos += length
+		}
+		QName = QName[1:]
+		offset = pos + 1
+
+		if QR == 0 {
+
+			QType := binary.BigEndian.Uint16(buf[offset:offset+2])
+			UnicastResponse := buf[offset+2] & 0x80 != 0
+			QClassSection := buf[offset+2:offset+4]
+			QClassSection[0] = QClassSection[0] & 0x7F
+			QClass := binary.BigEndian.Uint16(QClassSection)
+
+			fmt.Printf("========== QUESTION SECTION ==========\n")
+			fmt.Printf("FULL SECTION:   %b\n", buf[12:n])
+			fmt.Printf("QName:      %s\n", QName)
+			fmt.Printf("QType:      %d\n", QType)
+			fmt.Printf("Uni Res:    %v\n", UnicastResponse)
+			fmt.Printf("QClass:     %d\n", QClass)
+		} else {
+			fmt.Printf("========== ANSWER SECTION ==========\n")
+			fmt.Printf("FULL SECTION:   %b", buf[12:n])
+			fmt.Printf("Name:       %s\n", QName)
+		}
 
 		fmt.Printf("\n----------------\n")
 		
