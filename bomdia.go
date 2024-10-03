@@ -97,7 +97,6 @@ func main() {
 		offset = pos + 1
 
 		if QR == 0 {
-
 			QType := binary.BigEndian.Uint16(buf[offset:offset+2])
 			UnicastResponse := buf[offset+2] & 0x80 != 0
 			QClassSection := buf[offset+2:offset+4]
@@ -111,9 +110,32 @@ func main() {
 			fmt.Printf("Uni Res:    %v\n", UnicastResponse)
 			fmt.Printf("QClass:     %d\n", QClass)
 		} else {
+			Type := binary.BigEndian.Uint16(buf[offset:offset+2])
+			CacheFlush := buf[offset+2] & 0x80 != 0
+			ClassSection := buf[offset+2:offset+4]
+			ClassSection[0] = ClassSection[0] &0x7F
+			Class := binary.BigEndian.Uint16(ClassSection)
+			TTL := binary.BigEndian.Uint32(buf[offset+4:offset+8])
+			RDLength := binary.BigEndian.Uint16(buf[offset+8:offset+10])
+
+			RData := ""
+			pos := offset + 10
+
+			for _, b := range buf[pos:pos+int(RDLength)] {
+				RData += fmt.Sprintf(".%d", b)
+			}
+
+			RData = RData[1:]
+
 			fmt.Printf("========== ANSWER SECTION ==========\n")
-			fmt.Printf("FULL SECTION:   %b", buf[12:n])
-			fmt.Printf("Name:       %s\n", QName)
+			fmt.Printf("FULL SECTION:   %b\n", buf[12:n])
+			fmt.Printf("Name:           %s\n", QName)
+			fmt.Printf("Type:           %d\n", Type)
+			fmt.Printf("Cache Flush:    %v\n", CacheFlush)
+			fmt.Printf("Class:          %d\n", Class)
+			fmt.Printf("TTL:            %d\n", TTL)
+			fmt.Printf("RDLength:       %d\n", RDLength)
+			fmt.Printf("RData:          %s\n", RData)
 		}
 
 		fmt.Printf("\n----------------\n")
