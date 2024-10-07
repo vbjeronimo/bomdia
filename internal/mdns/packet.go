@@ -68,6 +68,11 @@ func DecodePacket(packet []byte, source net.UDPAddr) (*MDNSMessage, error) {
 
 	offset := 0
 	offset = parseHeader(packet, offset, &message)
+	if message.NumQuestions > 0 {
+		for _ = range message.NumQuestions {
+			offset = parseQuestion(packet, offset, &message)
+		}
+	}
 
 	return &message, nil
 }
@@ -97,6 +102,32 @@ func parseHeader(packet []byte, offset int, message *MDNSMessage) int {
 	offset += WORD_SIZE
 	message.NumAdditionalRR = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
 	offset += WORD_SIZE
+
+	return offset
+}
+
+func parseQuestion(packet []byte, offset int, message *MDNSMessage) int {
+	question := MDNSQuestion{}
+
+	name := ""
+	pos := offset
+	for packet[pos] != '\x00' {
+		length := int(packet[pos])
+		pos++
+
+		label := packet[pos : pos+length]
+		name += fmt.Sprintf(".%s", label)
+		pos += length
+	}
+
+	question.Name = name[1:]
+	offset = pos
+	question.Type = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+	question.Class = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+
+	message.Questions = append(message.Questions, question)
 
 	return offset
 }
