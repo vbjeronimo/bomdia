@@ -1,47 +1,102 @@
 package mdns
 
-import "net"
+import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"net"
+)
 
-type MDNSPacket struct {
+const (
+	WORD_SIZE = 2
+)
+
+var (
+	ErrTooFewBytes = errors.New("too few bytes received to be a proper mDNS packet")
+)
+
+type MDNSMessage struct {
 	Source net.UDPAddr
 
-	ID uint16
-	Flags MDNSFlags
-	NumQuestions uint16
-	NumAnswers uint16
-	NumAuthorityRR uint16
+	ID              uint16
+	Flags           MDNSFlags
+	NumQuestions    uint16
+	NumAnswers      uint16
+	NumAuthorityRR  uint16
 	NumAdditionalRR uint16
 
 	Questions []MDNSQuestion
-	Answers []MDNSAnswer
+	Answers   []MDNSAnswer
 
 	// Not sure yet if I'll need the other two slices, so I'll skip them for now
 }
 
 type MDNSFlags struct {
-	Query bool
+	Query               bool
 	AuthoritativeAnswer bool
-	Truncated bool
-	RecursionDesired bool
-	RecursionAvailable bool
+	Truncated           bool
+	RecursionDesired    bool
+	RecursionAvailable  bool
 
-	OPCode uint8
+	OPCode       uint8
 	ResponseCode uint8
 
 	zero uint8 // The "Zero bits" are a reserved section that's not used for anything, so I won't be exporting it
 }
 
 type MDNSQuestion struct {
-	Name string
-	Type uint16
+	Name  string
+	Type  uint16
 	Class uint16
 }
 
 type MDNSAnswer struct {
-	Name string
-	Type uint16
-	Class uint16
-	TTL uint32
+	Name     string
+	Type     uint16
+	Class    uint16
+	TTL      uint32
 	RDLength uint16
-	RData string
+	RData    string
+}
+
+func DecodePacket(packet []byte, source net.UDPAddr) (*MDNSMessage, error) {
+	if len(packet) < 12 {
+		return nil, fmt.Errorf("%w: %d bytes received", ErrTooFewBytes, len(packet))
+	}
+
+	message := MDNSMessage{Source: source}
+
+	offset := 0
+	offset = parseHeader(packet, offset, &message)
+
+	return &message, nil
+}
+
+func parseHeader(packet []byte, offset int, message *MDNSMessage) int {
+	message.ID = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+
+	flagsSection := packet[offset : offset+WORD_SIZE]
+
+	message.Flags.Query = flagsSection[0]&0x80 != 0
+	message.Flags.OPCode = flagsSection[0] >> 3 & 0x0F
+	message.Flags.AuthoritativeAnswer = flagsSection[0]&0x04 != 0
+	message.Flags.Truncated = flagsSection[0]&0x02 != 0
+	message.Flags.RecursionDesired = flagsSection[0]&0x01 != 0
+
+	message.Flags.RecursionAvailable = flagsSection[1]&0x80 != 0
+	message.Flags.zero = flagsSection[1] >> 4 & 0x07
+	message.Flags.ResponseCode = flagsSection[1] & 0x0F
+	offset += WORD_SIZE
+
+	message.NumQuestions = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+	message.NumAnswers = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+	message.NumAuthorityRR = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+	message.NumAdditionalRR = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+
+	return offset
 }
