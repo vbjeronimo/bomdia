@@ -68,9 +68,16 @@ func DecodePacket(packet []byte, source net.UDPAddr) (*MDNSMessage, error) {
 
 	offset := 0
 	offset = parseHeader(packet, offset, &message)
+
 	if message.NumQuestions > 0 {
 		for _ = range message.NumQuestions {
 			offset = parseQuestion(packet, offset, &message)
+		}
+	}
+
+	if message.NumAnswers > 0 {
+		for _ = range message.NumAnswers {
+			offset = parseAnswer(packet, offset, &message)
 		}
 	}
 
@@ -109,8 +116,40 @@ func parseHeader(packet []byte, offset int, message *MDNSMessage) int {
 func parseQuestion(packet []byte, offset int, message *MDNSMessage) int {
 	question := MDNSQuestion{}
 
+	question.Name, offset = parseName(packet, offset, message)
+	question.Type = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+	question.Class = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+
+	message.Questions = append(message.Questions, question)
+
+	return offset
+}
+
+func parseAnswer(packet []byte, offset int, message *MDNSMessage) int {
+	answer := MDNSAnswer{}
+
+	answer.Name, offset = parseName(packet, offset, message)
+	answer.Type = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+	answer.Class = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+	answer.TTL = binary.BigEndian.Uint32(packet[offset : offset+(WORD_SIZE*2)])
+	offset += WORD_SIZE * 2
+	answer.RDLength = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
+	offset += WORD_SIZE
+
+	length := int(answer.RDLength)
+	answer.RData = string(packet[offset : offset+length])
+
+	return offset
+}
+
+func parseName(packet []byte, offset int, message *MDNSMessage) (string, int) {
 	name := ""
 	pos := offset
+
 	for packet[pos] != '\x00' {
 		length := int(packet[pos])
 		pos++
@@ -120,14 +159,5 @@ func parseQuestion(packet []byte, offset int, message *MDNSMessage) int {
 		pos += length
 	}
 
-	question.Name = name[1:]
-	offset = pos
-	question.Type = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
-	question.Class = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
-
-	message.Questions = append(message.Questions, question)
-
-	return offset
+	return name[1:], pos
 }
