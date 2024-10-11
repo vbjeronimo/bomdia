@@ -150,6 +150,15 @@ func parseName(packet []byte, offset int, message *MDNSMessage) (string, int) {
 	name := ""
 	pos := offset
 
+	bitmask := byte(0b11 << 6)
+	if packet[pos] & bitmask == bitmask {
+		// if the first two bits of the NAME word is `11`, then NAME is compressed and we
+		// need to parse the remaining 14 bits to get the offset to the first reference of
+		// it in another section of the packet
+
+		// TODO: implement
+	}
+
 	for packet[pos] != '\x00' {
 		length := int(packet[pos])
 		pos++
