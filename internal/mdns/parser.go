@@ -24,6 +24,17 @@ func newByteParser(input []byte) (*byteParser, error) {
 	return byteParser, nil
 }
 
+func (bp *byteParser) peekBytes(n int) []byte {
+	if bp.offset >= len(bp.input) {
+		panic("TODO")
+	}
+
+	start, end := bp.offset, bp.offset+n
+	b := bp.input[start : end]
+
+	return b
+}
+
 func (bp *byteParser) readBytes(n int) []byte {
 	if bp.offset >= len(bp.input) {
 		panic("TODO")
@@ -40,12 +51,15 @@ func (bp *byteParser) readBytes(n int) []byte {
 	return b
 }
 
-func (bp *byteParser) peekBytes(n int) []byte {
+func (bp *byteParser) readFromOffset(offset int, n int) []byte {
 	if bp.offset >= len(bp.input) {
 		panic("TODO")
 	}
 
-	start, end := bp.offset, bp.offset+n
+	start, end := offset, offset+n
+
+	// TODO: what's the desired behaviour when the parser reaches the
+	// end of the input slice? Return '0's, '!ok', 'err', ...?
 	b := bp.input[start : end]
 
 	return b

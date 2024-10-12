@@ -133,14 +133,19 @@ func parseAnswers(byteParser *byteParser, message *MDNSMessage) {
 func parseName(byteParser *byteParser) string {
 	name := ""
 
-	// bitmask := byte(0b11 << 6)
-	// if packet[pos] & bitmask == bitmask {
-	// 	// if the first two bits of the NAME word is `11`, then NAME is compressed and we
-	// 	// need to parse the remaining 14 bits to get the offset to the first reference of
-	// 	// it in another section of the packet
-	//
-	// 	// TODO: implement
-	// }
+	bitmask := byte(0b11 << 6)
+	if byteParser.readBytes(1)[0] & bitmask == bitmask {
+		// if the first two bits of the NAME word is `11`, then NAME is compressed and we
+		// need to parse the remaining 14 bits to get the offset to the first reference of
+		// it in another section of the packet
+		nameSection := byteParser.readBytes(2)
+		nameSection[0] &= ^bitmask
+
+		offset := int(binary.BigEndian.Uint16(nameSection))
+		name = string(byteParser.readFromOffset(offset, 2))
+
+		return name
+	}
 
 	for byteParser.peekBytes(1)[0] != '\x00' {
 		length := int(byteParser.readBytes(1)[0])
