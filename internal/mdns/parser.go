@@ -1,8 +1,4 @@
-// Package byteparser is a helper module for parsing through a byte slice without
-// the need of keeping track of the current byte offset
-//
-// Useful for parsing packets.
-package byteparser
+package mdns
 
 import (
 	"errors"
@@ -13,22 +9,22 @@ var (
 	ErrEmptyInput = errors.New("empty input byte slice")
 )
 
-type ByteParser struct {
+type byteParser struct {
 	input []byte
 	offset int
 }
 
-func New(input []byte) (*ByteParser, error) {
+func newByteParser(input []byte) (*byteParser, error) {
 	if len(input) == 0 {
 		return nil, fmt.Errorf("%w: trying to initialize ByteParser with empty input", ErrEmptyInput)
 	}
 
-	byteParser := &ByteParser{input: input}
+	byteParser := &byteParser{input: input}
 
 	return byteParser, nil
 }
 
-func (bp *ByteParser) ReadBytes(n int) []byte {
+func (bp *byteParser) readBytes(n int) []byte {
 	if bp.offset >= len(bp.input) {
 		panic("TODO")
 	}
@@ -40,6 +36,17 @@ func (bp *ByteParser) ReadBytes(n int) []byte {
 	b := bp.input[start : end]
 
 	bp.offset = end
+
+	return b
+}
+
+func (bp *byteParser) peekBytes(n int) []byte {
+	if bp.offset >= len(bp.input) {
+		panic("TODO")
+	}
+
+	start, end := bp.offset, bp.offset+n
+	b := bp.input[start : end]
 
 	return b
 }

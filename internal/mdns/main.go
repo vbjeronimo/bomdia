@@ -7,10 +7,6 @@ import (
 	"net"
 )
 
-const (
-	WORD_SIZE = 2
-)
-
 var (
 	ErrTooFewBytes = errors.New("too few bytes received to be a proper mDNS packet")
 )
@@ -64,31 +60,30 @@ func DecodePacket(packet []byte, source net.UDPAddr) (*MDNSMessage, error) {
 		return nil, fmt.Errorf("%w: %d bytes received", ErrTooFewBytes, len(packet))
 	}
 
-	message := MDNSMessage{Source: source}
+	byteParser, err := newByteParser(packet)
+	if err != nil {
+		return nil, err
+	}
 
-	offset := 0
-	offset = parseHeader(packet, offset, &message)
+	message := &MDNSMessage{Source: source}
+
+	parseHeader(byteParser, message)
 
 	if message.NumQuestions > 0 {
-		for _ = range message.NumQuestions {
-			offset = parseQuestion(packet, offset, &message)
-		}
+		parseQuestions(byteParser, message)
 	}
 
 	if message.NumAnswers > 0 {
-		for _ = range message.NumAnswers {
-			offset = parseAnswer(packet, offset, &message)
-		}
+		parseAnswers(byteParser, message)
 	}
 
-	return &message, nil
+	return message, nil
 }
 
-func parseHeader(packet []byte, offset int, message *MDNSMessage) int {
-	message.ID = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
+func parseHeader(byteParser *byteParser, message *MDNSMessage) {
+	message.ID = binary.BigEndian.Uint16(byteParser.readBytes(2))
 
-	flagsSection := packet[offset : offset+WORD_SIZE]
+	flagsSection := byteParser.readBytes(2)
 
 	message.Flags.Query = flagsSection[0]&0x80 != 0
 	message.Flags.OPCode = flagsSection[0] >> 3 & 0x0F
@@ -99,74 +94,59 @@ func parseHeader(packet []byte, offset int, message *MDNSMessage) int {
 	message.Flags.RecursionAvailable = flagsSection[1]&0x80 != 0
 	message.Flags.zero = flagsSection[1] >> 4 & 0x07
 	message.Flags.ResponseCode = flagsSection[1] & 0x0F
-	offset += WORD_SIZE
 
-	message.NumQuestions = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
-	message.NumAnswers = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
-	message.NumAuthorityRR = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
-	message.NumAdditionalRR = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
-
-	return offset
+	message.NumQuestions = binary.BigEndian.Uint16(byteParser.readBytes(2))
+	message.NumAnswers = binary.BigEndian.Uint16(byteParser.readBytes(2))
+	message.NumAuthorityRR = binary.BigEndian.Uint16(byteParser.readBytes(2))
+	message.NumAdditionalRR = binary.BigEndian.Uint16(byteParser.readBytes(2))
 }
 
-func parseQuestion(packet []byte, offset int, message *MDNSMessage) int {
-	question := MDNSQuestion{}
+func parseQuestions(byteParser *byteParser, message *MDNSMessage) {
+	for range message.NumQuestions {
+		question := MDNSQuestion{}
 
-	question.Name, offset = parseName(packet, offset, message)
-	question.Type = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
-	question.Class = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
+		question.Name = parseName(byteParser)
+		question.Type = binary.BigEndian.Uint16(byteParser.readBytes(2))
+		question.Class = binary.BigEndian.Uint16(byteParser.readBytes(2))
 
-	message.Questions = append(message.Questions, question)
-
-	return offset
+		message.Questions = append(message.Questions, question)
+	}
 }
 
-func parseAnswer(packet []byte, offset int, message *MDNSMessage) int {
-	answer := MDNSAnswer{}
+func parseAnswers(byteParser *byteParser, message *MDNSMessage) {
+	for range message.NumAnswers {
+		answer := MDNSAnswer{}
 
-	answer.Name, offset = parseName(packet, offset, message)
-	answer.Type = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
-	answer.Class = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
-	answer.TTL = binary.BigEndian.Uint32(packet[offset : offset+(WORD_SIZE*2)])
-	offset += WORD_SIZE * 2
-	answer.RDLength = binary.BigEndian.Uint16(packet[offset : offset+WORD_SIZE])
-	offset += WORD_SIZE
+		answer.Name = parseName(byteParser)
+		answer.Type = binary.BigEndian.Uint16(byteParser.readBytes(2))
+		answer.Class = binary.BigEndian.Uint16(byteParser.readBytes(2))
+		answer.TTL = binary.BigEndian.Uint32(byteParser.readBytes(4))
+		answer.RDLength = binary.BigEndian.Uint16(byteParser.readBytes(2))
 
-	length := int(answer.RDLength)
-	answer.RData = string(packet[offset : offset+length])
+		length := int(answer.RDLength)
+		answer.RData = string(byteParser.readBytes(length))
 
-	return offset
+		message.Answers = append(message.Answers, answer)
+	}
 }
 
-func parseName(packet []byte, offset int, message *MDNSMessage) (string, int) {
+func parseName(byteParser *byteParser) string {
 	name := ""
-	pos := offset
 
-	bitmask := byte(0b11 << 6)
-	if packet[pos] & bitmask == bitmask {
-		// if the first two bits of the NAME word is `11`, then NAME is compressed and we
-		// need to parse the remaining 14 bits to get the offset to the first reference of
-		// it in another section of the packet
+	// bitmask := byte(0b11 << 6)
+	// if packet[pos] & bitmask == bitmask {
+	// 	// if the first two bits of the NAME word is `11`, then NAME is compressed and we
+	// 	// need to parse the remaining 14 bits to get the offset to the first reference of
+	// 	// it in another section of the packet
+	//
+	// 	// TODO: implement
+	// }
 
-		// TODO: implement
-	}
-
-	for packet[pos] != '\x00' {
-		length := int(packet[pos])
-		pos++
-
-		label := packet[pos : pos+length]
+	for byteParser.peekBytes(1)[0] != '\x00' {
+		length := int(byteParser.readBytes(1)[0])
+		label := byteParser.readBytes(length)
 		name += fmt.Sprintf(".%s", label)
-		pos += length
 	}
 
-	return name[1:], pos
+	return name[1:]
 }
